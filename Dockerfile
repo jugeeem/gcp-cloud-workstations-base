@@ -1,121 +1,38 @@
 FROM asia-northeast1-docker.pkg.dev/cloud-workstations-images/predefined/code-oss:latest
 
-# ユーザーをrootに切り替え
+# Switch to root for installation
 USER root
 
-# システムパッケージの更新
+# Install Python 3.12
 RUN apt-get update && \
-    apt-get install -y \
-    software-properties-common \
-    wget \
-    curl \
-    git \
-    build-essential \
-    libssl-dev \
-    zlib1g-dev \
-    libbz2-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libncursesw5-dev \
-    xz-utils \
-    tk-dev \
-    libxml2-dev \
-    libxmlsec1-dev \
-    libffi-dev \
-    liblzma-dev \
-    ca-certificates \
-    gnupg \
-    lsb-release && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y python3.12 python3.12-pip python3.12-venv && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
 
-# Node.js 20 LTS（最新安定版）のインストール
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs
+# Install nvm and Node.js 22
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash && \
+    export NVM_DIR="$HOME/.nvm" && \
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
+    nvm install 22 && \
+    nvm use 22 && \
+    nvm alias default 22
 
-# npmとyarnの最新版をインストール
-RUN npm install -g npm@latest && \
-    npm install -g yarn pnpm
+# Install Claude CLI
+RUN npm install -g @anthropic-ai/claude-cli
 
-# Python 3.13のソースからのビルドとインストール
-RUN cd /tmp && \
-    wget https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tgz && \
-    tar xzf Python-3.13.0.tgz && \
-    cd Python-3.13.0 && \
-    ./configure --enable-optimizations --with-ensurepip=install && \
-    make -j $(nproc) && \
-    make altinstall && \
-    cd / && \
-    rm -rf /tmp/Python-3.13.0*
+# Create alias for claude command to launch Claude Code
+RUN echo 'alias claude="claude-cli"' >> /etc/bash.bashrc && \
+    echo 'export PATH="$HOME/.nvm/versions/node/v22.*/bin:$PATH"' >> /etc/bash.bashrc
 
-# Python 3.13をデフォルトのpythonとして設定
-RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.13 1 && \
-    update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.13 1 && \
-    update-alternatives --install /usr/bin/pip pip /usr/local/bin/pip3.13 1 && \
-    update-alternatives --install /usr/bin/pip3 pip3 /usr/local/bin/pip3.13 1
+# Set environment variables for nvm
+ENV NVM_DIR="/root/.nvm"
+ENV PATH="$NVM_DIR/versions/node/v22.11.0/bin:$PATH"
 
-# pipのアップグレード
-RUN python -m pip install --upgrade pip
-
-# Python環境の基本パッケージ
-RUN python -m pip install \
-    requests \
-    python-dotenv \
-    jupyter \
-    ipykernel \
-    notebook \
-    jupyterlab
-
-# Node.js用のClaude Code関連パッケージのグローバルインストール
-RUN npm install -g \
-    @anthropic-ai/sdk \
-    typescript \
-    ts-node \
-    nodemon \
-    @types/node \
-    eslint \
-    prettier
-
-# 作業ディレクトリの作成
-RUN mkdir -p /home/user/workspace && \
-    mkdir -p /home/user/.config/claude-code && \
-    chown -R user:user /home/user/workspace /home/user/.config
-
-# Claude Code用のNode.js設定ファイルテンプレート作成
-COPY --chown=user:user claude-code-setup /home/user/.config/claude-code/
-
-# 開発に便利なツールのインストール
-RUN python -m pip install \
-    black \
-    flake8 \
-    mypy \
-    pytest \
-    pre-commit \
-    poetry
-
-# userに権限を戻す
+# Switch back to the default user
 USER user
 
-# Node.jsプロジェクトの初期化用スクリプト
-RUN echo '#!/bin/bash\n\
-echo "Initializing Claude Code Node.js environment..."\n\
-cd /home/user/workspace\n\
-if [ ! -f package.json ]; then\n\
-  npm init -y\n\
-  npm install @anthropic-ai/sdk dotenv\n\
-  npm install -D @types/node typescript ts-node nodemon\n\
-fi\n\
-echo "Environment ready! You can now configure your Anthropic API key."\n\
-' > /home/user/.config/claude-code/init-nodejs.sh && \
-chmod +x /home/user/.config/claude-code/init-nodejs.sh
-
-# 環境変数の設定
-ENV NODE_VERSION=20
-ENV PYTHON_VERSION=3.13
-ENV PATH="/usr/local/bin:${PATH}"
-
-# デフォルトの作業ディレクトリ
-WORKDIR /home/user/workspace
-
-# ヘルスチェック
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node --version && python --version || exit 1
+# Set working directory
+WORKDIR /home/user
