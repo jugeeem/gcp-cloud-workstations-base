@@ -1,4 +1,64 @@
 steps:
+  # Claude Code設定ファイルのコピー
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        mkdir -p claude-code-setup
+        cat > claude-code-setup/claude-client.js << 'EOF'
+        /**
+         * Claude Code Node.js Client
+         */
+        import Anthropic from '@anthropic-ai/sdk';
+        import dotenv from 'dotenv';
+        
+        dotenv.config();
+        
+        class ClaudeClient {
+            constructor() {
+                this.apiKey = process.env.ANTHROPIC_API_KEY;
+                
+                if (!this.apiKey) {
+                    throw new Error('ANTHROPIC_API_KEY環境変数が設定されていません');
+                }
+                
+                this.anthropic = new Anthropic({
+                    apiKey: this.apiKey,
+                });
+            }
+        
+            async sendMessage(message, model = 'claude-3-sonnet-20240229') {
+                try {
+                    const response = await this.anthropic.messages.create({
+                        model: model,
+                        max_tokens: 4000,
+                        messages: [{
+                            role: 'user',
+                            content: message
+                        }]
+                    });
+                    return response.content[0].text;
+                } catch (error) {
+                    console.error('Error sending message to Claude:', error);
+                    throw error;
+                }
+            }
+        
+            async generateCode(request, language = 'javascript') {
+                const prompt = `あなたは優秀なプログラマーです。以下の要求に基づいて、${language}でコードを生成してください。\n\n要求: ${request}\n\nコードのみを返してください。説明は不要です。`;
+                return await this.sendMessage(prompt);
+            }
+        
+            async reviewCode(code, language = 'javascript') {
+                const prompt = `以下の${language}コードをレビューして、改善点や問題点を指摘してください：\n\n\`\`\`${language}\n${code}\n\`\`\`\n\n改善提案も含めて回答してください。`;
+                return await this.sendMessage(prompt);
+            }
+        }
+        
+        export default ClaudeClient;
+        EOF
+
   # Dockerイメージのビルド
   - name: 'gcr.io/cloud-builders/docker'
     args: [
@@ -34,4 +94,4 @@ substitutions:
   _TAG: '${BUILD_ID}'
 
 # タイムアウト設定
-timeout: '1200s'
+timeout: '1800s'

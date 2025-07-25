@@ -1,0 +1,25 @@
+{
+  "name": "claude-code-workstation",
+  "version": "1.0.0",
+  "description": "Claude Code setup for Cloud Workstations",
+  "main": "claude-client.js",
+  "type": "module",
+  "scripts": {
+    "start": "node claude-client.js",
+    "dev": "nodemon claude-client.js",
+    "test": "node test-claude.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.3",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "nodemon": "^3.1.4",
+    "typescript": "^5.5.3",
+    "ts-node": "^10.9.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

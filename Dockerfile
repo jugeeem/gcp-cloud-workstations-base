@@ -3,7 +3,7 @@ FROM asia-northeast1-docker.pkg.dev/cloud-workstations-images/predefined/code-os
 # ユーザーをrootに切り替え
 USER root
 
-# システムパッケージの更新とPython 3.13のインストール
+# システムパッケージの更新
 RUN apt-get update && \
     apt-get install -y \
     software-properties-common \
@@ -22,8 +22,19 @@ RUN apt-get update && \
     libxml2-dev \
     libxmlsec1-dev \
     libffi-dev \
-    liblzma-dev && \
+    liblzma-dev \
+    ca-certificates \
+    gnupg \
+    lsb-release && \
     rm -rf /var/lib/apt/lists/*
+
+# Node.js 20 LTS（最新安定版）のインストール
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
+
+# npmとyarnの最新版をインストール
+RUN npm install -g npm@latest && \
+    npm install -g yarn pnpm
 
 # Python 3.13のソースからのビルドとインストール
 RUN cd /tmp && \
@@ -45,39 +56,60 @@ RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.
 # pipのアップグレード
 RUN python -m pip install --upgrade pip
 
-# Claude Code用の前提条件をインストール
+# Python環境の基本パッケージ
 RUN python -m pip install \
     requests \
-    anthropic \
-    openai \
     python-dotenv \
     jupyter \
     ipykernel \
     notebook \
     jupyterlab
 
-# VS Code拡張機能のインストール用ディレクトリ作成
-RUN mkdir -p /opt/code-server/extensions
-
-# Pythonサポート用のVS Code拡張機能をプリインストール
-# （Cloud Workstations環境では手動でインストールする必要がある場合があります）
-RUN curl -L https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-python/vsextensions/python/latest/vspackage -o /tmp/python-extension.vsix
+# Node.js用のClaude Code関連パッケージのグローバルインストール
+RUN npm install -g \
+    @anthropic-ai/sdk \
+    typescript \
+    ts-node \
+    nodemon \
+    @types/node \
+    eslint \
+    prettier
 
 # 作業ディレクトリの作成
 RUN mkdir -p /home/user/workspace && \
-    chown -R user:user /home/user/workspace
+    mkdir -p /home/user/.config/claude-code && \
+    chown -R user:user /home/user/workspace /home/user/.config
 
-# Claude Code用の設定ファイルテンプレート作成
-RUN mkdir -p /home/user/.config/claude-code && \
-    echo '# Claude Code Configuration Template' > /home/user/.config/claude-code/config.example && \
-    echo '# Please set your API key after starting the workstation' >> /home/user/.config/claude-code/config.example && \
-    echo 'ANTHROPIC_API_KEY=your_api_key_here' >> /home/user/.config/claude-code/config.example && \
-    chown -R user:user /home/user/.config
+# Claude Code用のNode.js設定ファイルテンプレート作成
+COPY --chown=user:user claude-code-setup /home/user/.config/claude-code/
+
+# 開発に便利なツールのインストール
+RUN python -m pip install \
+    black \
+    flake8 \
+    mypy \
+    pytest \
+    pre-commit \
+    poetry
 
 # userに権限を戻す
 USER user
 
+# Node.jsプロジェクトの初期化用スクリプト
+RUN echo '#!/bin/bash\n\
+echo "Initializing Claude Code Node.js environment..."\n\
+cd /home/user/workspace\n\
+if [ ! -f package.json ]; then\n\
+  npm init -y\n\
+  npm install @anthropic-ai/sdk dotenv\n\
+  npm install -D @types/node typescript ts-node nodemon\n\
+fi\n\
+echo "Environment ready! You can now configure your Anthropic API key."\n\
+' > /home/user/.config/claude-code/init-nodejs.sh && \
+chmod +x /home/user/.config/claude-code/init-nodejs.sh
+
 # 環境変数の設定
+ENV NODE_VERSION=20
 ENV PYTHON_VERSION=3.13
 ENV PATH="/usr/local/bin:${PATH}"
 
@@ -86,4 +118,4 @@ WORKDIR /home/user/workspace
 
 # ヘルスチェック
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python --version || exit 1
+    CMD node --version && python --version || exit 1
